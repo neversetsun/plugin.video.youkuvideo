@@ -12,11 +12,21 @@ from xbmcswift2 import Plugin
 from xbmcswift2 import xbmcgui
 from collections_backport import OrderedDict
 from zhcnkbd import Keyboard
+import xbmcaddon
+import time, random
 
 plugin = Plugin()
 dialog = xbmcgui.Dialog()
 filters = plugin.get_storage('ftcache', TTL=1440)
 epcache = plugin.get_storage('epcache', TTL=1440)
+
+# Plugin constants 
+__addon__     = xbmcaddon.Addon()
+__addonname__ = __addon__.getAddonInfo('name')
+
+def log(txt):
+    message = '%s: %s' % (__addonname__, txt)
+    xbmc.log(msg=message, level=xbmc.LOGDEBUG)
 
 @plugin.route('/')
 def showcatalog():
@@ -214,6 +224,7 @@ def showepisode(url):
     """
     show episodes list
     """
+    log('here it is')
     if url in epcache: return epcache[url]
     result = _http(url)
     episodestr = re.search(r'id="episode_wrap">(.*?)<div id="point_wrap',
@@ -228,6 +239,7 @@ def showepisode(url):
             playurl = re.search(r'btnplayposi".*?"(http:.*?)"', result)
         if not playurl:
             playurl = re.search(r'btnplaytrailer.*?(http:.*?)"', result)
+        log('not episodes ' + url)
         playmovie(playurl.group(1))
     else:
         elists = re.findall(r'<li data="(reload_\d+)" >', result)
@@ -253,12 +265,15 @@ def showepisode(url):
 
 @plugin.route('/play/<url>')
 @plugin.route('/play/<url>/<source>', name='playsearch')
-def playmovie(url, source='youku'):
+def playmovie(url, source='youku_single_seg'):
     """
     play movie
     """
+    log('tips1 ' + source)
     playutil = PlayUtil(url, source)
+    log('tips2 ' + source)
     movurl = getattr(playutil, source, playutil.notsup)()
+    log('tips3 ' + source)
     if not movurl:
         xbmcgui.Dialog().ok(
             '提示框', '解析地址异常，无法播放')
@@ -301,7 +316,7 @@ def _http(url):
 
 
 class PlayUtil(object):
-    def __init__(self, url, source='youku'):
+    def __init__(self, url, source='youku_single_seg'):
         self.url = url
         self.source = source
         dialog = xbmcgui.Dialog()
@@ -349,29 +364,41 @@ class PlayUtil(object):
     def youku_single_seg(self):
         #get movie metadata (json format)
         vid = self.url[-18:-5]
-        moviesurl="http://v.youku.com/player/getPlayList/VideoIDS/{0}".format(
-            vid)
+        log("%s %s vid=%s" % (sys._getframe().f_code.co_name, sys._getframe().f_lineno, str(vid)))
+        moviesurl="http://v.youku.com/player/getPlayList/VideoIDS/{0}/Pf/4?__callback=?".format(vid)
         result = _http(moviesurl)
         movinfo = json.loads(result.replace('\r\n',''))
         movdat = movinfo['data'][0]
         streamfids = movdat['streamfileids']
 
-        if not 'mp4' in streamfids:
-            xbmcgui.Dialog().ok('提示', '没有高清mp4片源,无法播放')
+        if (not '3gphd' in streamfids) or (not 'mp4' in streamfids):
+            log("streamfids=" + str(streamfids))
+            xbmcgui.Dialog().ok('提示', '没有高清片源,无法播放')
             return 'cancel'
+        log("streamfids=" + str(streamfids))
 
         movurl = self.getVideoSrc(movdat, streamfids)
         return movurl
 
-    def getVideoSrc(mdat, streamfids, stype='mp4', ftype="3gphd"):
+    def getVideoSrc(self, mdat, streamfids, stype='mp4', ftype='3gphd'):
+        log("%s %s" % (sys._getframe().f_code.co_name, sys._getframe().f_lineno))
         streamfid = streamfids[ftype]
         seed = int(mdat['seed']);
+        log("%s, %s: streamfid=%s, seed=%s" % 
+           (sys._getframe().f_code.co_name, sys._getframe().f_lineno, streamfid, seed))
         fileid = self._getfileid(streamfid, seed);
+        log("fileid=" + str(fileid))
 
         sid = self.getsid();
-        no = "%x" % (int(movdat['segs'][ftype][0]['no']))
-        ts = movdat['segs'][ftype][0]['seconds']
-        K  = movdat['segs'][ftype][0]['k']
+        log("sessionID=" + str(sid))
+
+        log("%s,%s: movdat=%s" % (sys._getframe().f_code.co_name, sys._getframe().f_lineno, str(mdat['segs'][ftype])))
+        no = "%x" % (int(mdat['segs'][ftype][0]['no']))
+        log("%s,%s: no=%s" % (sys._getframe().f_code.co_name, sys._getframe().f_lineno, no))
+        ts = mdat['segs'][ftype][0]['seconds']
+        log("%s,%s: ts=%s" % (sys._getframe().f_code.co_name, sys._getframe().f_lineno, str(ts)))
+        K  = mdat['segs'][ftype][0]['k']
+        log("%s,%s: K=%s" % (sys._getframe().f_code.co_name, sys._getframe().f_lineno, str(K)))
 
         ret = "http://f.youku.com/player/getFlvPath/sid/" + sid;
         if len(no) == 1:
@@ -390,7 +417,8 @@ class PlayUtil(object):
         log("%s: Real url = %s" % (sys._getframe().f_code.co_name, ret))
         return ret
 
-    def getsid():
+    def getsid(self):
+        log("%s,%s" % (sys._getframe().f_code.co_name, sys._getframe().f_lineno))
         t = time.time()
         part1 = "%d" % (int(t*1000))
         part2 = "%d" % (1E3 + int((t-int(t))*1000))

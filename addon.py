@@ -346,6 +346,57 @@ class PlayUtil(object):
         movurl = 'stack://{0}'.format(' , '.join(segurls))
         return movurl
 
+    def youku_single_seg(self):
+        #get movie metadata (json format)
+        vid = self.url[-18:-5]
+        moviesurl="http://v.youku.com/player/getPlayList/VideoIDS/{0}".format(
+            vid)
+        result = _http(moviesurl)
+        movinfo = json.loads(result.replace('\r\n',''))
+        movdat = movinfo['data'][0]
+        streamfids = movdat['streamfileids']
+
+        if not 'mp4' in streamfids:
+            xbmcgui.Dialog().ok('提示', '没有高清mp4片源,无法播放')
+            return 'cancel'
+
+        movurl = self.getVideoSrc(movdat, streamfids)
+        return movurl
+
+    def getVideoSrc(mdat, streamfids, stype='mp4', ftype="3gphd"):
+        streamfid = streamfids[ftype]
+        seed = int(mdat['seed']);
+        fileid = self._getfileid(streamfid, seed);
+
+        sid = self.getsid();
+        no = "%x" % (int(movdat['segs'][ftype][0]['no']))
+        ts = movdat['segs'][ftype][0]['seconds']
+        K  = movdat['segs'][ftype][0]['k']
+
+        ret = "http://f.youku.com/player/getFlvPath/sid/" + sid;
+        if len(no) == 1:
+            no = "0" + no;
+        ret += "_" + no;
+        ret += "/st/" + stype;
+        ret += "/fileid/" + fileid;
+        ret += "?K=" + K;
+        ret += "&hd=1&myp=0&ts=%d&ypp=0" % ts;
+        ret += "&callback=?";
+        log("%s: Orig url = %s" % (sys._getframe().f_code.co_name, ret))
+
+        req = urllib2.Request(ret)
+        response = urllib2.urlopen(req)
+        ret = response.geturl()
+        log("%s: Real url = %s" % (sys._getframe().f_code.co_name, ret))
+        return ret
+
+    def getsid():
+        t = time.time()
+        part1 = "%d" % (int(t*1000))
+        part2 = "%d" % (1E3 + int((t-int(t))*1000))
+        part3 = "%d" % (int(9E3 * random.random()) + 1E3)
+        return part1+part2+part3
+
     def sohu(self):
         html = _http(self.url)
         vid = re.search(r'\Wvid\s*[\:=]\s*[\'"]?(\d+)[\'"]?', html).group(1)
